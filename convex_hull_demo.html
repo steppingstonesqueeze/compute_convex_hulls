@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Convex Hull Visualization</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.26.0/plotly.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .example {
+            margin: 30px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: #fafafa;
+        }
+        .example h3 {
+            color: #555;
+            margin-top: 0;
+        }
+        .plot-container {
+            height: 400px;
+            margin: 20px 0;
+        }
+        .info {
+            background: #e8f4fd;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+            border-left: 4px solid #2196F3;
+        }
+        .segments {
+            font-family: monospace;
+            font-size: 14px;
+            background: #f8f8f8;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        .controls {
+            text-align: center;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Convex Hull Visualization & Computation</h1>
+        
+        <div class="info">
+            <strong>Algorithm:</strong> Graham Scan - Vertices returned in <strong>clockwise order</strong><br>
+            <strong>Features:</strong> Interactive plots, line segments display, multiple examples
+        </div>
+
+        <div class="controls">
+            <button onclick="showExample(1)">Example 1: Square</button>
+            <button onclick="showExample(2)">Example 2: Random Points</button>
+            <button onclick="showExample(3)">Example 3: Triangle</button>
+            <button onclick="generateRandom()">Generate Random</button>
+        </div>
+
+        <div class="example">
+            <h3 id="exampleTitle">Example 1: Square with Interior Point</h3>
+            <div id="plotDiv" class="plot-container"></div>
+            <div id="hullInfo"></div>
+            <div id="segmentsInfo"></div>
+        </div>
+    </div>
+
+    <script>
+        // Convex Hull Implementation
+        class ConvexHull {
+            static crossProduct(O, A, B) {
+                return (A[0] - O[0]) * (B[1] - O[1]) - (A[1] - O[1]) * (B[0] - O[0]);
+            }
+            
+            static polarAngle(point, reference) {
+                const dx = point[0] - reference[0];
+                const dy = point[1] - reference[1];
+                return Math.atan2(dy, dx);
+            }
+            
+            static distance(point, reference) {
+                const dx = point[0] - reference[0];
+                const dy = point[1] - reference[1];
+                return Math.sqrt(dx * dx + dy * dy);
+            }
+            
+            static computeHull(points) {
+                const n = points.length;
+                if (n < 3) throw new Error("Need at least 3 points");
+                
+                // Find bottom-most point (leftmost if tie)
+                let startIdx = 0;
+                for (let i = 1; i < n; i++) {
+                    if (points[i][1] < points[startIdx][1] || 
+                        (points[i][1] === points[startIdx][1] && points[i][0] < points[startIdx][0])) {
+                        startIdx = i;
+                    }
+                }
+                
+                const startPoint = points[startIdx];
+                const otherPoints = points.filter((_, i) => i !== startIdx);
+                
+                // Sort by polar angle, then by distance
+                otherPoints.sort((a, b) => {
+                    const angleA = this.polarAngle(a, startPoint);
+                    const angleB = this.polarAngle(b, startPoint);
+                    if (Math.abs(angleA - angleB) < 1e-9) {
+                        return this.distance(a, startPoint) - this.distance(b, startPoint);
+                    }
+                    return angleA - angleB;
+                });
+                
+                const sortedPoints = [startPoint, ...otherPoints];
+                
+                // Graham scan
+                const hull = [];
+                for (const point of sortedPoints) {
+                    while (hull.length > 1 && 
+                           this.crossProduct(hull[hull.length - 2], hull[hull.length - 1], point) <= 0) {
+                        hull.pop();
+                    }
+                    hull.push(point);
+                }
+                
+                return this.ensureClockwise(hull);
+            }
+            
+            static ensureClockwise(hull) {
+                const n = hull.length;
+                if (n < 3) return hull;
+                
+                // Calculate signed area
+                let signedArea = 0;
+                for (let i = 0; i < n; i++) {
+                    const j = (i + 1) % n;
+                    signedArea += (hull[j][0] - hull[i][0]) * (hull[j][1] + hull[i][1]);
+                }
+                
+                // If counterclockwise, reverse
+                if (signedArea > 0) {
+                    hull.reverse();
+                }
+                
+                return hull;
+            }
+            
+            static getSegments(hull) {
+                const segments = [];
+                const n = hull.length;
+                for (let i = 0; i < n; i++) {
+                    const j = (i + 1) % n;
+                    segments.push([hull[i], hull[j]]);
+                }
+                return segments;
+            }
+        }
+
+        // Example datasets
+        const examples = {
+            1: {
+                title: "Example 1: Square with Interior Point",
+                points: [[0, 0], [1, 0], [1, 1], [0, 1], [0.5, 0.5], [0.3, 0.7]]
+            },
+            2: {
+                title: "Example 2: Random Points",
+                points: [[2.5, 3.2], [1.8, 1.4], [4.2, 2.8], [3.7, 4.1], [1.2, 3.6], 
+                        [4.8, 1.9], [2.1, 4.5], [3.4, 1.2], [1.9, 2.3], [4.1, 3.8]]
+            },
+            3: {
+                title: "Example 3: Triangle with Interior Points",
+                points: [[0, 0], [4, 0], [2, 3], [1, 1], [2, 1], [1.5, 1.5]]
+            }
+        };
+
+        function plotConvexHull(points, hull, title) {
+            const allX = points.map(p => p[0]);
+            const allY = points.map(p => p[1]);
+            const hullX = hull.map(p => p[0]);
+            const hullY = hull.map(p => p[1]);
+            
+            // Close the hull for plotting
+            const hullXClosed = [...hullX, hullX[0]];
+            const hullYClosed = [...hullY, hullY[0]];
+            
+            const traces = [
+                {
+                    x: allX,
+                    y: allY,
+                    mode: 'markers',
+                    type: 'scatter',
+                    name: 'All Points',
+                    marker: {
+                        color: 'lightblue',
+                        size: 8,
+                        line: { color: 'blue', width: 1 }
+                    }
+                },
+                {
+                    x: hullXClosed,
+                    y: hullYClosed,
+                    mode: 'lines+markers',
+                    type: 'scatter',
+                    name: 'Convex Hull',
+                    line: { color: 'red', width: 3 },
+                    marker: {
+                        color: 'red',
+                        size: 10,
+                        line: { color: 'darkred', width: 2 }
+                    }
+                }
+            ];
+            
+            const layout = {
+                title: title,
+                xaxis: { title: 'X' },
+                yaxis: { title: 'Y' },
+                showlegend: true,
+                hovermode: 'closest',
+                plot_bgcolor: 'white',
+                paper_bgcolor: 'white'
+            };
+            
+            Plotly.newPlot('plotDiv', traces, layout, {responsive: true});
+        }
+
+        function showExample(exampleNum) {
+            const example = examples[exampleNum];
+            const points = example.points;
+            const hull = ConvexHull.computeHull(points);
+            const segments = ConvexHull.getSegments(hull);
+            
+            document.getElementById('exampleTitle').textContent = example.title;
+            plotConvexHull(points, hull, example.title);
+            
+            // Display hull info
+            const hullInfo = document.getElementById('hullInfo');
+            hullInfo.innerHTML = `
+                <div class="info">
+                    <strong>Hull Vertices (Clockwise):</strong><br>
+                    ${hull.map((p, i) => `${i + 1}: (${p[0].toFixed(1)}, ${p[1].toFixed(1)})`).join('<br>')}
+                </div>
+            `;
+            
+            // Display segments
+            const segmentsInfo = document.getElementById('segmentsInfo');
+            segmentsInfo.innerHTML = `
+                <div class="segments">
+                    <strong>Line Segments:</strong><br>
+                    ${segments.map((seg, i) => 
+                        `Segment ${i + 1}: (${seg[0][0].toFixed(1)}, ${seg[0][1].toFixed(1)}) → (${seg[1][0].toFixed(1)}, ${seg[1][1].toFixed(1)})`
+                    ).join('<br>')}
+                </div>
+            `;
+        }
+
+        function generateRandom() {
+            const points = [];
+            const n = 8 + Math.floor(Math.random() * 7); // 8-14 points
+            
+            for (let i = 0; i < n; i++) {
+                points.push([
+                    Math.random() * 5,
+                    Math.random() * 4
+                ]);
+            }
+            
+            const hull = ConvexHull.computeHull(points);
+            const segments = ConvexHull.getSegments(hull);
+            
+            document.getElementById('exampleTitle').textContent = `Random Example: ${n} Points`;
+            plotConvexHull(points, hull, `Random Example: ${n} Points`);
+            
+            // Display hull info
+            const hullInfo = document.getElementById('hullInfo');
+            hullInfo.innerHTML = `
+                <div class="info">
+                    <strong>Hull Vertices (Clockwise):</strong><br>
+                    ${hull.map((p, i) => `${i + 1}: (${p[0].toFixed(2)}, ${p[1].toFixed(2)})`).join('<br>')}
+                </div>
+            `;
+            
+            // Display segments
+            const segmentsInfo = document.getElementById('segmentsInfo');
+            segmentsInfo.innerHTML = `
+                <div class="segments">
+                    <strong>Line Segments:</strong><br>
+                    ${segments.map((seg, i) => 
+                        `Segment ${i + 1}: (${seg[0][0].toFixed(2)}, ${seg[0][1].toFixed(2)}) → (${seg[1][0].toFixed(2)}, ${seg[1][1].toFixed(2)})`
+                    ).join('<br>')}
+                </div>
+            `;
+        }
+
+        // Initialize with first example
+        showExample(1);
+    </script>
+</body>
+</html>
